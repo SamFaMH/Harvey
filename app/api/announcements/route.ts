@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { AnnouncementStyle } from '@/lib/types';
 
+/** Base64 audio in Postgres times out on long custom text; only store small clips. */
+const MAX_AUDIO_URL_LENGTH = 80_000;
+
 export async function GET() {
   try {
     if (!isSupabaseConfigured()) {
@@ -59,12 +62,15 @@ export async function POST(request: NextRequest) {
         audioDuration?: number;
       };
 
-    if (!text?.trim() || !voiceId || !style || !audioUrl) {
+    if (!text?.trim() || !voiceId || !style) {
       return NextResponse.json(
         { error: 'Please fill all required fields.', success: false },
         { status: 400 }
       );
     }
+
+    const storedAudioUrl =
+      audioUrl && audioUrl.length <= MAX_AUDIO_URL_LENGTH ? audioUrl : null;
 
     const { data, error } = await supabase
       .from('announcements')
@@ -73,7 +79,7 @@ export async function POST(request: NextRequest) {
         voice_id: voiceId,
         style: style as AnnouncementStyle,
         template_type: templateType ?? 'custom',
-        audio_url: audioUrl,
+        audio_url: storedAudioUrl,
         audio_duration: audioDuration ?? 0,
       })
       .select('id')
@@ -81,16 +87,19 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       return NextResponse.json(
-        { error: 'Failed to save. Please try again.', success: false },
+        { error: error.message || 'Failed to save. Please try again.', success: false },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ id: data.id, success: true });
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to save. Please try again.', success: false },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      id: data.id,
+      success: true,
+      audioStored: Boolean(storedAudioUrl),
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to save. Please try again.';
+    return NextResponse.json({ error: message, success: false }, { status: 500 });
   }
 }

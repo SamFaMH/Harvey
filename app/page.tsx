@@ -172,27 +172,40 @@ export default function HomePage() {
       setAudioUrl(genData.audioUrl);
       setDuration(genData.duration);
 
+      const savePayload: Record<string, string | number> = {
+        text,
+        voiceId: selectedVoice,
+        style: selectedStyle,
+        templateType: selectedTemplate.name,
+        audioDuration: genData.duration,
+      };
+      if (
+        genData.audioUrl &&
+        genData.audioUrl.length <= 80_000
+      ) {
+        savePayload.audioUrl = genData.audioUrl;
+      }
+
       const saveRes = await fetch('/api/announcements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voiceId: selectedVoice,
-          style: selectedStyle,
-          templateType: selectedTemplate.name,
-          audioUrl: genData.audioUrl,
-          audioDuration: genData.duration,
-        }),
+        body: JSON.stringify(savePayload),
       });
 
       const saveData = await saveRes.json();
       if (!saveRes.ok || !saveData.success) {
-        showToast('Failed to save. Please try again.', 'error');
+        showToast(
+          saveData.error ?? 'Failed to save. Please try again.',
+          'error'
+        );
       } else {
         const updated = await getAnnouncements(20);
         setAnnouncements(updated);
+        const savedNote = saveData.audioStored === false
+          ? ' (history saved; replay from preview — long audio is not stored in DB)'
+          : '';
         showToast(
-          `Announcement ready (${genData.duration?.toFixed(1)}s)`,
+          `Announcement ready (${genData.duration?.toFixed(1)}s)${savedNote}`,
           'success'
         );
       }
@@ -247,17 +260,20 @@ export default function HomePage() {
         });
         const genData = await genRes.json();
         if (genRes.ok && genData.success) {
+          const batchSave: Record<string, string | number> = {
+            text,
+            voiceId: selectedVoice,
+            style: selectedStyle,
+            templateType: 'custom',
+            audioDuration: genData.duration,
+          };
+          if (genData.audioUrl && genData.audioUrl.length <= 80_000) {
+            batchSave.audioUrl = genData.audioUrl;
+          }
           await fetch('/api/announcements', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text,
-              voiceId: selectedVoice,
-              style: selectedStyle,
-              templateType: 'custom',
-              audioUrl: genData.audioUrl,
-              audioDuration: genData.duration,
-            }),
+            body: JSON.stringify(batchSave),
           });
         }
       } catch {
@@ -342,9 +358,19 @@ export default function HomePage() {
     if (template?.id === 'custom') {
       setFormValues({ text: ann.text });
     }
-    setAudioUrl(ann.audio_url);
-    setDuration(ann.audio_duration);
-    showToast('Loaded from history.', 'info');
+    if (ann.audio_url) {
+      setAudioUrl(ann.audio_url);
+      setDuration(ann.audio_duration);
+    } else {
+      setAudioUrl(null);
+      setDuration(ann.audio_duration);
+    }
+    showToast(
+      ann.audio_url
+        ? 'Loaded from history.'
+        : 'Loaded text from history. Click Generate to hear audio again.',
+      'info'
+    );
   }, [templates, showToast]);
 
   const handleDelete = useCallback(

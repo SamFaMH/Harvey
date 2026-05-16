@@ -5,7 +5,11 @@ export function buildAnnouncementText(
   values: Record<string, string>
 ): string {
   if (template.id === 'custom') {
-    return values.text?.trim() ?? '';
+    const text = values.text?.trim() ?? '';
+    if (text === 'Type your announcement here...') {
+      return '';
+    }
+    return text;
   }
 
   let text = template.template_text;
